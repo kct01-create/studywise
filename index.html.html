@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="StudyWise builds personalised, AI-generated study plans from your subject, topics, deadline and available time.">
+<title>StudyWise – AI Study Planner</title>
+<style>
+:root{--bg:#f6f5f1;--card:#fff;--tx:#1d2a26;--mut:#68756f;--ac:#0f766e;--ac2:#ccfbf1;--bd:#e3e1da;--ok:#16a34a}
+@media(prefers-color-scheme:dark){:root{--bg:#101615;--card:#18211f;--tx:#e8efec;--mut:#92a39c;--ac:#2dd4bf;--ac2:#134e4a;--bd:#27332f;--ok:#4ade80}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;padding:14px 20px;max-width:960px;margin:auto}
+.logo{font-weight:800;font-size:20px;cursor:pointer}.logo span{color:var(--ac)}
+main{max-width:960px;margin:auto;padding:0 20px 60px}
+h1{font-size:clamp(30px,6vw,52px);line-height:1.1;margin:.4em 0}h2{margin:.2em 0 .6em}
+.mut{color:var(--mut)}
+.btn{background:var(--ac);color:var(--bg);border:0;border-radius:10px;padding:10px 18px;font:600 15px inherit;cursor:pointer}
+.btn.ghost{background:transparent;color:var(--tx);border:1px solid var(--bd)}.btn:disabled{opacity:.5}
+.ib{background:none;border:0;cursor:pointer;color:var(--mut);font-size:16px;padding:4px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:18px}
+.grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(240px,1fr))}
+.hero{padding:40px 0 20px}.hero p{font-size:18px;max-width:560px}
+label{display:block;font-weight:600;margin:14px 0 4px;font-size:14px}
+input,textarea{width:100%;padding:11px;border-radius:10px;border:1px solid var(--bd);background:var(--bg);color:var(--tx);font:inherit}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}@media(max-width:560px){.row{grid-template-columns:1fr}}
+.bar{height:8px;background:var(--ac2);border-radius:8px;overflow:hidden;margin:10px 0 4px}.bar i{display:block;height:100%;background:var(--ac);transition:width .3s}
+.task{display:flex;gap:12px;align-items:flex-start;padding:12px 0;border-bottom:1px solid var(--bd)}
+.task input[type=checkbox]{width:22px;height:22px;margin-top:2px;accent-color:var(--ok)}.task.done b{text-decoration:line-through;color:var(--mut)}
+.task input.e{margin:2px 0 6px;padding:6px}
+.tag,.st{display:inline-block;background:var(--ac2);color:var(--ac);padding:3px 10px;border-radius:99px;font-size:13px;font-weight:700}
+.day{margin:20px 0 4px;font-weight:700;color:var(--ac)}
+.err{color:#dc2626;margin-top:10px}.wrap{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+</style></head><body>
+<header><div class="logo" onclick="goHome()">Study<span>Wise</span></div><div class="wrap" id="nav"></div></header>
+<main id="app"></main>
+<footer style="text-align:center;padding:24px;color:var(--mut);font-size:14px">© StudyWise · AI study plans for students</footer>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script>
+/* 1) PASTE YOUR SUPABASE PROJECT VALUES HERE (Project Settings -> API) */
+const SUPABASE_URL="https://rzqphizrsctxudcmzxsv.supabase.co/rest/v1/",SUPABASE_ANON_KEY="sb_publishable_o1gRxGJUIzLe8MXil31qaA_JS9BME_v";
+const sb=supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
+const $=s=>document.querySelector(s),app=$('#app'),LS=localStorage;
+const J=(k,d)=>{try{return JSON.parse(LS.getItem(k))??d}catch{return d}},S=(k,v)=>LS.setItem(k,JSON.stringify(v));
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const key=(d=new Date())=>new Date(d-d.getTimezoneOffset()*6e4).toISOString().slice(0,10);
+let me=null,plans=[],cur=null,view='landing',editing=null,mode='in';
+const prof=()=>({name:me?.user_metadata?.name||(me?.email||'').split('@')[0],remind:me?.user_metadata?.remind||'18:00'});
+async function load(){const{data,error}=await sb.from('plans').select('*').order('created_at',{ascending:false});if(error)console.error(error);plans=(data||[]).map(r=>({id:r.id,title:r.title,subject:r.subject,topics:r.topics,deadline:r.deadline,hours:+r.hours,summary:r.summary,tasks:r.tasks,created:r.created_at}))}
+async function save(p){const{error}=await sb.from('plans').upsert({id:p.id,user_id:me.id,title:p.title,subject:p.subject,topics:p.topics,deadline:p.deadline,hours:p.hours,summary:p.summary,tasks:p.tasks});if(error)alert('Could not save: '+error.message)}
+const P=()=>plans.find(x=>x.id===cur);
+function goHome(){go(me?'home':'landing')}
+function go(v,id){if(id)cur=id;view=(!me&&!['landing','signin'].includes(v))?'signin':v;editing=null;render();scrollTo(0,0)}
+function render(){nav();({landing,signin,home,dash,new:newForm,plan,settings})[view]()}
+function nav(){$('#nav').innerHTML=me?`<button class="ib" onclick="go('home')">Home</button><button class="ib" onclick="go('dash')">My plans</button><button class="ib" onclick="go('settings')">Settings</button><button class="btn" onclick="go('new')">+ New plan</button><button class="btn ghost" onclick="logout()">Sign out</button>`:`<button class="btn" onclick="go('signin')">Sign in</button>`}
+const pct=p=>p.tasks.length?Math.round(p.tasks.filter(x=>x.done).length/p.tasks.length*100):0;
+function streak(){const s=new Set();plans.forEach(p=>p.tasks.forEach(t=>t.doneAt&&s.add(t.doneAt)));let d=new Date(),n=0;if(!s.has(key(d)))d=new Date(Date.now()-864e5);while(s.has(key(d))){n++;d=new Date(d-864e5)}return n}
+const streakBadge=()=>{const n=streak();return `<p><span class="st">🔥 ${n}-day streak</span> <span class="mut" style="font-size:14px">${n?'Keep it going!':'Complete a task today to start one.'}</span></p>`};
+function landing(){app.innerHTML=`<section class="hero"><span class="tag">AI-powered · Built for students</span>
+<h1>Turn your exam deadline into a day-by-day plan.</h1>
+<p class="mut">Tell StudyWise your subject, topics, deadline and how much time you have. AI builds a structured schedule you can tick off, track and revisit.</p>
+<button class="btn" onclick="go(me?'home':'signin')">${me?'Open my dashboard':'Get started free'}</button></section>
+<div class="grid"><div class="card"><h3>🎯 Personalised</h3><p class="mut">Plans fit your real deadline and daily study hours.</p></div><div class="card"><h3>✅ Track progress</h3><p class="mut">Tick off tasks, watch your progress bar and keep a streak.</p></div><div class="card"><h3>🔔 Reminders</h3><p class="mut">Export calendar alerts or get daily notifications.</p></div></div>
+<h2 style="margin-top:40px">How it works</h2><div class="grid"><div class="card"><b>1. Set your goal</b><p class="mut">Subject, topics, deadline, daily hours.</p></div><div class="card"><b>2. AI builds your plan</b><p class="mut">A dated, task-by-task schedule.</p></div><div class="card"><b>3. Study and tick off</b><p class="mut">Track progress and stay consistent.</p></div></div>
+<h2 style="margin-top:40px">Who it’s for</h2><p class="mut">High-school and university students preparing for exams, finals, certifications or any deadline.</p>`}
+function signin(){const up=mode==='up';app.innerHTML=`<div class="card" style="max-width:420px;margin:30px auto"><h2>${up?'Create your account':'Welcome back 👋'}</h2>
+${up?'<label>Name</label><input id="nm" autocomplete="name">':''}<label>Email</label><input id="em" type="email" autocomplete="email" inputmode="email" placeholder="you@example.com"><label>Password</label><input id="pw" type="password" autocomplete="${up?'new-password':'current-password'}" placeholder="8+ characters">
+<br><br><button class="btn" id="ab" style="width:100%" onclick="auth()">${up?'Create account':'Sign in'}</button><p id="msg" class="err"></p>
+<p class="mut" style="text-align:center">${up?'Have an account?':'New here?'} <a href="#" onclick="mode='${up?'in':'up'}';signin();return false" style="color:var(--ac)">${up?'Sign in':'Create an account'}</a></p></div>`}
+const msg=t=>$('#msg').textContent=t;
+async function auth(){const e=$('#em').value.trim().toLowerCase(),p=$('#pw').value,b=$('#ab');
+if(!e.includes('@'))return msg('Email must contain an @ symbol.');
+if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e))return msg('Please enter a valid email address.');
+if(p.length<8)return msg('Password must be at least 8 characters.');
+b.disabled=true;msg('');
+if(mode==='up'){const{data,error}=await sb.auth.signUp({email:e,password:p,options:{data:{name:$('#nm').value.trim(),remind:'18:00'}}});
+ if(error){b.disabled=false;return msg(error.message)}
+ if(!data.session){b.disabled=false;$('#msg').style.color='var(--ok)';return msg('Check your email and click the confirmation link, then sign in.')}}
+else{const{error}=await sb.auth.signInWithPassword({email:e,password:p});if(error){b.disabled=false;return msg(error.message)}}}
+async function logout(){await sb.auth.signOut()}
+function home(){const all=plans.flatMap(p=>p.tasks.map(t=>({...t,pid:p.id,pt:p.title}))),done=all.filter(t=>t.done),mins=done.reduce((a,t)=>a+t.minutes,0),today=key();
+const due=all.filter(t=>!t.done&&t.date<=today),next=all.filter(t=>!t.done).sort((a,b)=>a.date.localeCompare(b.date)).slice(0,5);
+app.innerHTML=`<h2>Hi, ${esc((prof().name||'').split(' ')[0])} 👋</h2>${streakBadge()}
+<div class="grid" style="margin:16px 0"><div class="card"><div class="mut">Plans</div><h2>${plans.length}</h2></div><div class="card"><div class="mut">Tasks done</div><h2>${done.length}/${all.length}</h2></div><div class="card"><div class="mut">Hours studied</div><h2>${(mins/60).toFixed(1)}</h2></div></div>
+<div class="card" style="margin-bottom:16px;border-color:var(--ac)">🔔 <b>${due.length?due.length+' task'+(due.length>1?'s':'')+' due today or overdue':'You’re all caught up for today'}</b></div>
+<h3>Up next</h3><div class="card">${next.length?next.map(t=>`<div class="task" style="cursor:pointer" onclick="go('plan','${t.pid}')"><div><b>${esc(t.title)}</b><div class="mut" style="font-size:13px">${t.date<today?'⚠️ Overdue · ':t.date===today?'Today · ':esc(t.date)+' · '}${esc(t.pt)} · ${t.minutes} min</div></div></div>`).join(''):'<p class="mut">Nothing scheduled yet. Create a plan to get started.</p>'}</div>
+<p class="wrap"><button class="btn" onclick="go('new')">+ New plan</button><button class="btn ghost" onclick="go('dash')">View all plans</button></p>`}
+function dash(){app.innerHTML=`<h2>Your study plans</h2>${streakBadge()}`+(plans.length?`<div class="grid">${plans.map(p=>`<div class="card" style="cursor:pointer" onclick="go('plan','${p.id}')"><span class="tag">${esc(p.subject)}</span><h3 style="margin:.4em 0">${esc(p.title)}</h3><div class="mut" style="font-size:14px">Due ${esc(p.deadline)} · ${p.tasks.length} tasks</div><div class="bar"><i style="width:${pct(p)}%"></i></div><div class="mut" style="font-size:13px">${pct(p)}% complete</div></div>`).join('')}</div>`:`<div class="card"><p>No plans yet.</p><button class="btn" onclick="go('new')">Create a plan</button></div>`)}
+function settings(){const u=prof();app.innerHTML=`<h2>Settings</h2><div class="card"><p class="mut">Signed in as <b>${esc(me.email)}</b></p><label>Daily reminder time</label><input id="rt" type="time" value="${u.remind}" style="width:auto"><br><br>
+<div class="wrap"><button class="btn" onclick="saveSet()">Save</button><button class="btn ghost" onclick="notif()">Enable notifications</button></div></div>`}
+async function saveSet(){const{data,error}=await sb.auth.updateUser({data:{remind:$('#rt').value||'18:00'}});if(error)return alert(error.message);me=data.user;alert('Saved.')}
+function newForm(){app.innerHTML=`<h2>Create a study plan</h2><div class="card"><label>Subject</label><input id="sub" placeholder="e.g. Organic Chemistry"><label>Topics (one per line or comma-separated)</label><textarea id="top" rows="4"></textarea>
+<div class="row"><div><label>Deadline</label><input id="dl" type="date" min="${key()}" value="${key(new Date(Date.now()+7*864e5))}"></div><div><label>Study hours per day</label><input id="hrs" type="number" min="0.5" max="12" step="0.5" value="2"></div></div><br><button class="btn" id="gen" onclick="generate()">✨ Generate with AI</button><div id="err" class="err"></div></div>`}
+async function ai(prompt){const{data,error}=await sb.functions.invoke('generate-plan',{body:{prompt}});
+if(error){let m=error.message;try{m=(await error.context.json()).error||m}catch{}throw new Error(m)}return data}
+const mk=(a,max)=>(a||[]).slice(0,max).map(t=>({date:String(t.date),title:String(t.title),topic:String(t.topic||''),minutes:+t.minutes||30,done:false}));
+const FMT='Return ONLY JSON: {"title":string,"summary":string,"tasks":[{"date":"YYYY-MM-DD","title":string,"topic":string,"minutes":number}]}';
+async function generate(){const sub=$('#sub').value.trim(),top=$('#top').value.trim(),dl=$('#dl').value,hrs=+$('#hrs').value,err=$('#err');
+if(!sub||!top||!dl||!hrs)return err.textContent='Please fill in every field.';
+const days=Math.ceil((new Date(dl)-new Date(key()))/864e5)+1;if(days<1||days>60)return err.textContent='Pick a deadline within the next 60 days.';
+const b=$('#gen');b.disabled=true;b.textContent='Generating your plan…';err.textContent='';
+try{const r=await ai(`You are an expert study coach. Create a study plan.\nSubject: ${sub}\nTopics: ${top}\nToday: ${key()}; Deadline: ${dl} (${days} days incl. today)\nHours per day: ${hrs}\nRules: spread topics sensibly, include practice and a final revision day, stay within daily hours, max 40 tasks, 15-180 minutes each.\n${FMT}`);
+const tasks=mk(r.tasks,40).map((t,i)=>({...t,id:i}));if(!tasks.length)throw new Error('The AI returned an empty plan. Try again.');
+const id=crypto.randomUUID();plans.unshift({id,topics:top,title:r.title||sub+' plan',summary:r.summary||'',subject:sub,deadline:dl,hours:hrs,tasks,created:Date.now()});await save(plans[0]);go('plan',id)}
+catch(e){err.textContent=e.message;b.disabled=false;b.textContent='✨ Generate with AI'}}
+function plan(){const p=P();if(!p)return go('dash');const by={};p.tasks.forEach(t=>(by[t.date]=by[t.date]||[]).push(t));
+app.innerHTML=`<button class="btn ghost" onclick="go('dash')">← All plans</button><h2 style="margin-top:16px">${esc(p.title)}</h2>${streakBadge()}<p class="mut">${esc(p.summary)}</p>
+<div class="card"><b>${pct(p)}% complete</b> <span class="mut">(${p.tasks.filter(t=>t.done).length}/${p.tasks.length} tasks)</span><div class="bar"><i style="width:${pct(p)}%"></i></div></div>
+${Object.keys(by).sort().map(d=>`<div class="day">${new Date(d+'T00:00').toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'})}</div>`+by[d].map(t=>`<div class="task ${t.done?'done':''}"><input type="checkbox" ${t.done?'checked':''} onchange="toggle(${t.id},this.checked)">${editing===t.id?`<div style="flex:1"><input class="e" id="et" value="${esc(t.title)}"><div class="wrap"><input class="e" id="ed" type="date" value="${esc(t.date)}" style="width:auto"><input class="e" id="em" type="number" min="5" value="${t.minutes}" style="width:90px"></div><button class="btn" onclick="saveEdit(${t.id})">Save</button> <button class="btn ghost" onclick="editing=null;render()">Cancel</button></div>`:`<div style="flex:1"><b>${esc(t.title)}</b><div class="mut" style="font-size:13px">${esc(t.topic)} · ${t.minutes} min</div></div><button class="ib" onclick="editing=${t.id};render()">✎</button><button class="ib" onclick="rmTask(${t.id})">🗑</button>`}</div>`).join('')).join('')}
+<p class="wrap"><button class="btn ghost" onclick="addTask()">+ Add task</button><button class="btn ghost" id="rg" onclick="regen()">🔄 Regenerate remaining</button><button class="btn ghost" onclick="ics()">🔔 Calendar reminders</button><button class="btn ghost" onclick="window.print()">📄 Print / PDF</button><button class="btn ghost" onclick="del()">Delete plan</button></p>`}
+function toggle(i,v){const t=P().tasks.find(x=>x.id===i);t.done=v;t.doneAt=v?key():null;save(P());render()}
+function saveEdit(i){const t=P().tasks.find(x=>x.id===i);t.title=$('#et').value.trim()||t.title;t.date=$('#ed').value||t.date;t.minutes=+$('#em').value||t.minutes;editing=null;save(P());render()}
+function rmTask(i){const p=P();p.tasks=p.tasks.filter(x=>x.id!==i);save(P());render()}
+function addTask(){const p=P(),id=Math.max(-1,...p.tasks.map(t=>t.id))+1;p.tasks.push({id,date:key(),title:'New task',topic:'',minutes:30,done:false});editing=id;save(P());render()}
+async function del(){if(confirm('Delete this plan?')){const{error}=await sb.from('plans').delete().eq('id',cur);if(error)return alert(error.message);plans=plans.filter(x=>x.id!==cur);go('dash')}}
+async function regen(){const p=P();if(!confirm('Regenerate unfinished tasks? Completed tasks are kept.'))return;const b=$('#rg');b.disabled=true;b.textContent='Regenerating…';
+try{const days=Math.ceil((new Date(p.deadline)-new Date(key()))/864e5)+1;if(days<1)throw new Error('The deadline has passed.');
+const done=p.tasks.filter(t=>t.done),topics=p.topics||[...new Set(p.tasks.map(t=>t.topic))].join(', ');
+const r=await ai(`You are an expert study coach. Re-plan the REMAINING work.\nSubject: ${p.subject}\nTopics: ${topics}\nCompleted: ${done.map(t=>t.title).join('; ')||'none'}\nToday: ${key()}; Deadline: ${p.deadline}; Hours per day: ${p.hours}\nRules: don't repeat completed work, include final revision, max 30 tasks, dates between today and deadline.\n${FMT}`);
+const nt=mk(r.tasks,30);if(!nt.length)throw new Error('Empty plan returned. Try again.');p.tasks=[...done,...nt].map((t,i)=>({...t,id:i}));p.summary=r.summary||p.summary;await save(p)}
+catch(e){alert(e.message)}render()}
+const icsT=s=>String(s).replace(/[\\;,]/g,'\\$&').replace(/\n/g,'\\n');
+function ics(){const p=P(),[h,m]=(prof().remind||'18:00').split(':').map(Number),z=n=>String(n).padStart(2,'0'),stamp=new Date().toISOString().replace(/[-:]/g,'').slice(0,15)+'Z';
+const f=d=>d.getFullYear()+z(d.getMonth()+1)+z(d.getDate())+'T'+z(d.getHours())+z(d.getMinutes())+'00';
+const ev=p.tasks.filter(t=>!t.done).map(t=>{const st=new Date(t.date+'T'+z(h)+':'+z(m)+':00'),en=new Date(+st+t.minutes*6e4);return['BEGIN:VEVENT','UID:'+p.id+'-'+t.id+'@studywise','DTSTAMP:'+stamp,'DTSTART:'+f(st),'DTEND:'+f(en),'SUMMARY:'+icsT('Study: '+t.title),'DESCRIPTION:'+icsT(p.title+' - '+t.topic),'BEGIN:VALARM','TRIGGER:-PT10M','ACTION:DISPLAY','DESCRIPTION:Time to study','END:VALARM','END:VEVENT'].join('\r\n')});
+if(!ev.length)return alert('No unfinished tasks to remind you about.');
+const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//StudyWise//EN',...ev,'END:VCALENDAR'].join('\r\n')],{type:'text/calendar'}));a.download=(p.subject||'plan').replace(/[^\w-]+/g,'_')+'-reminders.ics';a.click()}
+async function notif(){try{const r=await Notification.requestPermission();alert(r==='granted'?'Notifications on. You’ll be reminded at your daily time while StudyWise is open. Use Calendar reminders for alerts when it’s closed.':'Notifications are blocked in this browser.')}catch{alert('Notifications aren’t supported here.')}}
+setInterval(()=>{try{const n=new Date(),z=x=>String(x).padStart(2,'0'),hm=z(n.getHours())+':'+z(n.getMinutes());
+if(me&&window._ln!==hm&&hm===(prof().remind||'18:00')&&Notification.permission==='granted'){window._ln=hm;const c=plans.flatMap(p=>p.tasks).filter(t=>!t.done&&t.date<=key()).length;if(c)new Notification('StudyWise',{body:c+' study task'+(c>1?'s':'')+' due today'})}}catch{}},30000);
+sb.auth.onAuthStateChange((ev,s)=>setTimeout(async()=>{
+ if(ev==='SIGNED_OUT'){me=null;plans=[];go('landing')}
+ else if(ev==='SIGNED_IN'&&s&&(!me||me.id!==s.user.id)){me=s.user;await load();go('home')}},0));
+sb.auth.getSession().then(async({data})=>{me=data.session?.user||null;if(me)await load();go(me?'home':'landing')});
+</script></body></html>
