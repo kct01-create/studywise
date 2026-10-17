@@ -36,7 +36,7 @@ input,textarea{width:100%;padding:11px;border-radius:10px;border:1px solid var(-
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* 1) PASTE YOUR SUPABASE PROJECT VALUES HERE (Project Settings -> API) */
-const SUPABASE_URL="https://rzqphizrsctxudcmzxsv.supabase.co/rest/v1/",SUPABASE_ANON_KEY="sb_publishable_o1gRxGJUIzLe8MXil31qaA_JS9BME_v";
+const SUPABASE_URL="https://rzqphizrsctxudcmzxsv.supabase.co",SUPABASE_ANON_KEY="sb_publishable_o1gRxGJUIzLe8MXil31qaA_JS9BME_v";
 const sb=supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
 const $=s=>document.querySelector(s),app=$('#app'),LS=localStorage;
 const J=(k,d)=>{try{return JSON.parse(LS.getItem(k))??d}catch{return d}},S=(k,v)=>LS.setItem(k,JSON.stringify(v));
